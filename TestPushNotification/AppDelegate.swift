@@ -7,39 +7,91 @@
 //
 
 import UIKit
+import PubNub
+import Alamofire
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, PNObjectEventListener {
 
   var window: UIWindow?
+  var client : PubNub?
 
 
   func application(application: UIApplication, didFinishLaunchingWithOptions launchOptions: [NSObject: AnyObject]?) -> Bool {
-    // Override point for customization after application launch.
+    NSLog("\(launchOptions)")
+    let notificationSettings = UIUserNotificationSettings(forTypes: [.Alert,.Badge,.Sound], categories: nil)
+    application.registerUserNotificationSettings(notificationSettings)
+    application.registerForRemoteNotifications()
     return true
   }
+  func client(client: PubNub, didReceiveMessage message: PNMessageResult) {
+    print(message)
+  }
+  func client(client: PubNub, didReceiveStatus status: PNStatus) {
+    print(status)
+  }
+  func application(application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: NSData) {
+    
+    let pnConfig = PNConfiguration(publishKey: "pub-c-80373d88-709b-4207-942e-fc3b542c55ba", subscribeKey: "sub-c-5ac5f118-355e-11e6-b8b0-0619f8945a4f")
+    self.client = PubNub.clientWithConfiguration(pnConfig)
+    if let oldKey = NSUserDefaults.standardUserDefaults().dataForKey("DEVICE_TOKEN") {
+      if !oldKey.isEqualToData(deviceToken) {
+        self.client?.removePushNotificationsFromChannels(["user1"], withDevicePushToken: oldKey) { print($0) }
+        self.client?.addPushNotificationsOnChannels(["user1"], withDevicePushToken: deviceToken) { print($0) }
+      }
+    } else {
+      self.client?.addPushNotificationsOnChannels(["user1"], withDevicePushToken: deviceToken) { print($0) }
+    }
+    client?.addListener(self)
+    NSUserDefaults.standardUserDefaults().setObject(deviceToken, forKey: "DEVICE_TOKEN")
+    NSUserDefaults.standardUserDefaults().synchronize()
+  }
+  func application(application: UIApplication, didReceiveRemoteNotification userInfo: [NSObject : AnyObject]) {
+    print(userInfo)
+  }
 
+  func application(application: UIApplication, didReceiveRemoteNotification userInfo: [NSObject : AnyObject], fetchCompletionHandler completionHandler: (UIBackgroundFetchResult) -> Void) {
+    NSLog("with fetch completion")
+    NSLog("\(userInfo)")
+    if let url = userInfo["url"] as? String {
+      NSLog("fetching data for URL")
+      Alamofire.request(.GET, url).responseJSON { response in
+        NSLog("Response from request is ")
+        switch(response.result) {
+        case .Success(let val):
+          NSLog("\(val)")
+          let localNotification = UILocalNotification()
+          localNotification.fireDate = NSDate()
+          localNotification.userInfo = ["title": "from remote notification", "url": "some url"]
+          localNotification.alertBody = "The is the alert body"
+          localNotification.soundName = UILocalNotificationDefaultSoundName
+          application.scheduleLocalNotification(localNotification)
+          completionHandler(.NewData)
+        case .Failure(let err):
+          NSLog("\(err)")
+          completionHandler(.Failed)
+        }
+      }
+    }
+    
+  }
+  func application(application: UIApplication, didReceiveLocalNotification notification: UILocalNotification) {
+    NSLog("received local notification")
+    NSLog("\(notification)")
+  }
   func applicationWillResignActive(application: UIApplication) {
-    // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-    // Use this method to pause ongoing tasks, disable timers, and throttle down OpenGL ES frame rates. Games should use this method to pause the game.
   }
 
   func applicationDidEnterBackground(application: UIApplication) {
-    // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
-    // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
   }
 
   func applicationWillEnterForeground(application: UIApplication) {
-    // Called as part of the transition from the background to the inactive state; here you can undo many of the changes made on entering the background.
   }
 
   func applicationDidBecomeActive(application: UIApplication) {
-    // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
   }
 
-  func applicationWillTerminate(application: UIApplication) {
-    // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
-  }
+  func applicationWillTerminate(application: UIApplication) {  }
 
 
 }
